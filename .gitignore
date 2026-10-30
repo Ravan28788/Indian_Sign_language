@@ -1,0 +1,33 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+npy_env/
+ENV/
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+.cache/
+.pytest_cache/
+
+# Large raw training image dataset (1.7GB) - keeps repo fast & below GitHub limits
+Image/
+*.npy
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs & temp files
+Logs/
+*.log
+
+# Editor settings
+.vscode/
+.idea/
+
+# Local deployment temporary copies
+hf_deploy/
+hf_gradio_free/

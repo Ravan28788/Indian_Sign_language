@@ -1,0 +1,218 @@
+{
+  "total_images": 29347,
+  "total_categories": 41,
+  "taxonomies": {
+    "alphabets": {
+      "A": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "B": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "C": {
+        "count": 551,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "D": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "E": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "F": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "G": {
+        "count": 551,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "H": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "I": {
+        "count": 551,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "J": {
+        "count": 546,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "K": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "L": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "M": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "N": {
+        "count": 558,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "O": {
+        "count": 561,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "P": {
+        "count": 553,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "Q": {
+        "count": 551,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "R": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "S": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "T": {
+        "count": 552,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "U": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "V": {
+        "count": 553,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "W": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "X": {
+        "count": 550,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "Y": {
+        "count": 559,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      },
+      "Z": {
+        "count": 561,
+        "resolution": "300x400",
+        "sample_file": "63.jpg"
+      }
+    },
+    "digits": {
+      "eight": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "five": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "four": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "nine": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "one": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "seven": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "six": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "three": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "two": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "zero": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      }
+    },
+    "commands": {
+      "down": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "left": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "right": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "stop": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      },
+      "up": {
+        "count": 1000,
+        "resolution": "300x300",
+        "sample_file": "img 708.jpg"
+      }
+    },
+    "unclassified": {}
+  }
+}
