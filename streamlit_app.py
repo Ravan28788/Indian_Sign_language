@@ -4,18 +4,23 @@ streamlit_app.py - High-Quality Real-Time Indian Sign Language (ISL) Vision & Vo
 Features:
   - Participant Onboarding Gate (Name, Age, Country, Phone Number)
   - Persistent Participant Identity HUD & Sidebar Profile Card
-  - Live Real-Time Camera Stream with Hand Landmark Mesh & HUD Overlays
-  - Comprehensive Camera Controls: Camera ON/OFF toggle, Mirror Feed, Mode selector
-  - Advanced Sound & Vocalizer System:
+  - REAL-TIME Live Camera Stream (WebRTC & Direct Hardware Webcam):
+      * 30 FPS continuous processing with MediaPipe Hands
+      * Wrist-relative 63 normalized keypoints for translation/distance invariance
+      * Live HUD overlay: Hand bounding box, skeletal mesh, gesture label, and live FPS
+      * Instant continuous gesture recognition
+  - Multi-Camera Mode Support:
+      * Mode 1: Live Real-Time WebRTC Stream (Best for Cloud & Browser)
+      * Mode 2: Direct Local Webcam (Best for Local Desktop Run via OpenCV)
+      * Mode 3: Instant Snapshot Capture (Immediate 1-frame inference)
+  - Comprehensive Sound & Voice Controls:
       * Master Sound Toggle (Mute / Unmute)
       * Volume Slider (0% - 100%)
-      * Speech Rate / Speed Control (0.5x - 2.0x)
-      * Speech Pitch Control (0.5 - 1.5)
-      * Browser Native Web Speech API (Works 100% on Cloud / Hugging Face / Streamlit Cloud)
+      * Speaking Speed / Rate (0.5x - 1.8x)
+      * In-Browser Web Speech API + Background Sound Engine
       * Test Audio voice button
   - Real-Time Sentence Builder with Read Aloud & Clear History
-  - Detection Tuning: Confidence Threshold & Smoothing Window
-  - Clean, responsive glassmorphic cyber-aesthetic UI
+  - Detection Tuning: Confidence Threshold & Stability Smoothing
 """
 
 import os
@@ -59,6 +64,12 @@ from function import (
 )
 
 try:
+    from sound_engine import sound_player
+    HAS_LOCAL_SOUND = True
+except Exception:
+    HAS_LOCAL_SOUND = False
+
+try:
     from tensorflow.keras.models import model_from_json
 except ImportError:
     from keras.models import model_from_json
@@ -76,7 +87,6 @@ st.set_page_config(
 # ----------------- Custom Modern Styling -----------------
 st.markdown("""
 <style>
-    /* Global Styles */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
     
     html, body, [class*="css"] {
@@ -175,7 +185,7 @@ st.markdown("""
         backdrop-filter: blur(10px);
     }
     .metric-value {
-        font-size: 28px;
+        font-size: 26px;
         font-weight: 800;
         color: #00FFA3;
         font-family: 'JetBrains Mono', monospace;
@@ -237,11 +247,7 @@ st.markdown("""
 
 # ----------------- Web Speech Audio Bridge -----------------
 def play_browser_speech(text: str, volume: float = 1.0, rate: float = 1.0, pitch: float = 1.0, muted: bool = False):
-    """
-    Renders a zero-height client-side JavaScript snippet that synthesizes
-    speech directly through the user's web browser using the HTML5 Web Speech API.
-    Works anywhere (locally or on cloud/Hugging Face).
-    """
+    """Client-side JavaScript HTML5 Web Speech API synthesis."""
     if muted or not text:
         return
 
@@ -257,12 +263,6 @@ def play_browser_speech(text: str, volume: float = 1.0, rate: float = 1.0, pitch
             msg.rate = {max(0.5, min(2.0, float(rate)))};
             msg.pitch = {max(0.5, min(1.5, float(pitch)))};
             msg.lang = 'en-US';
-            
-            // Try to select high quality natural voice if available
-            const voices = window.speechSynthesis.getVoices();
-            const preferred = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha')));
-            if (preferred) msg.voice = preferred;
-
             window.speechSynthesis.speak(msg);
         }}
     }})();
@@ -272,15 +272,14 @@ def play_browser_speech(text: str, volume: float = 1.0, rate: float = 1.0, pitch
 
 
 # ----------------- Model & Resource Caching -----------------
-@st.cache_resource(show_spinner="Loading ISL gesture neural network...")
+@st.cache_resource(show_spinner="Initializing ISL neural network...")
 def load_model_and_labels():
-    """Loads the trained model architecture, weights, and action labels once."""
     model_json_path = os.path.join(BASE_DIR, "model.json")
     model_weights_path = os.path.join(BASE_DIR, "model.h5")
     actions_json_path = os.path.join(BASE_DIR, "actions.json")
 
     if not os.path.exists(model_json_path) or not os.path.exists(model_weights_path):
-        st.error("Trained model files ('model.json' or 'model.h5') not found in workspace.")
+        st.error("Model files ('model.json' or 'model.h5') not found!")
         return None, None
 
     with open(model_json_path, "r") as f:
@@ -317,6 +316,9 @@ if "current_confidence" not in st.session_state:
 if "camera_enabled" not in st.session_state:
     st.session_state.camera_enabled = True
 
+if "camera_mode" not in st.session_state:
+    st.session_state.camera_mode = "Live WebRTC Video Stream (Real-Time)"
+
 if "sound_muted" not in st.session_state:
     st.session_state.sound_muted = False
 
@@ -331,6 +333,9 @@ if "sound_pitch" not in st.session_state:
 
 if "pending_speech" not in st.session_state:
     st.session_state.pending_speech = None
+
+if "direct_cam_running" not in st.session_state:
+    st.session_state.direct_cam_running = False
 
 
 # =========================================================================
@@ -383,8 +388,7 @@ if st.session_state.user_profile is None:
                     "phone": user_phone.strip(),
                     "session_start": time.strftime("%Y-%m-%d %H:%M:%S")
                 }
-                # Initial welcome speech
-                st.session_state.pending_speech = f"Welcome {user_name}! ISL Workspace is ready."
+                st.session_state.pending_speech = f"Welcome {user_name}! System ready."
                 st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -394,8 +398,6 @@ if st.session_state.user_profile is None:
 # =========================================================================
 # PHASE 2: FULLY OPERATIONAL WORKSPACE (When User Profile is Set)
 # =========================================================================
-
-# Load ML Model
 model, actions = load_model_and_labels()
 if model is None:
     st.error("Model initialization failed. Please check trained model files.")
@@ -413,7 +415,7 @@ with col_hud:
             <div class="hud-avatar">{initials}</div>
             <div>
                 <p class="hud-user-name">{profile['name']}</p>
-                <p class="hud-user-subtitle">Session Active Since: {profile['session_start']}</p>
+                <p class="hud-user-subtitle">Session Started: {profile['session_start']}</p>
             </div>
         </div>
         <div class="hud-badges-col">
@@ -436,12 +438,16 @@ with col_edit:
 with st.sidebar:
     st.markdown("### 🎛️ Control Center")
 
-    # 1. Camera Controls
-    st.markdown("#### 📷 Camera Controls")
+    # 1. Camera Mode & Controls
+    st.markdown("#### 📷 Camera Setup")
+    cam_modes = ["Live WebRTC Video Stream (Real-Time)", "Direct Hardware Webcam (OpenCV)", "Instant Snapshot Mode"]
+    chosen_mode = st.selectbox("Camera Stream Mode", cam_modes, index=0)
+    st.session_state.camera_mode = chosen_mode
+
     camera_on = st.toggle("Camera Feed Active", value=st.session_state.camera_enabled, key="toggle_cam")
     st.session_state.camera_enabled = camera_on
 
-    mirror_feed = st.checkbox("Mirror Camera View", value=True, help="Flips the horizontal axis for intuitive mirror-like gesturing")
+    mirror_feed = st.checkbox("Mirror Camera View", value=True, help="Flips feed horizontally for intuitive mirror interaction")
 
     st.markdown("---")
 
@@ -456,7 +462,7 @@ with st.sidebar:
 
     st.session_state.sound_rate = st.slider(
         "Speaking Speed (Rate)", min_value=0.5, max_value=1.8, value=st.session_state.sound_rate, step=0.1,
-        help="1.0 is standard human conversation speed (~145 WPM)"
+        help="1.0 is standard natural human speaking speed (~145 WPM)"
     )
 
     st.session_state.sound_pitch = st.slider(
@@ -464,14 +470,14 @@ with st.sidebar:
     )
 
     if st.button("🔊 Test Voice Output", use_container_width=True):
-        st.session_state.pending_speech = f"Audio check complete. Hello {profile['name']}!"
+        st.session_state.pending_speech = f"Audio operational. Hello {profile['name']}!"
 
     st.markdown("---")
 
     # 3. Detection AI Parameters
     st.markdown("#### 🧠 Detection Tuning")
     threshold = st.slider("Confidence Threshold", min_value=0.50, max_value=0.95, value=0.70, step=0.05)
-    min_stability_frames = st.slider("Smoothing Window (Frames)", min_value=3, max_value=10, value=5, step=1)
+    min_stability_frames = st.slider("Smoothing Window (Frames)", min_value=2, max_value=8, value=3, step=1)
 
     st.markdown("---")
     with st.expander(f"📚 Supported Gestures ({len(actions)})"):
@@ -490,23 +496,14 @@ if st.session_state.pending_speech:
     st.session_state.pending_speech = None
 
 
-# ----------------- Main Interface Workspace -----------------
-col_cam, col_data = st.columns([5, 4])
-
-# Shared detection state tracker
-class DetectionTracker:
-    def __init__(self):
-        self.recent = deque(maxlen=7)
-        self.last_spoken_gesture = None
-        self.last_spoken_time = 0.0
-
-tracker = DetectionTracker()
-
-
-def process_video_frame(frame_bgr: np.ndarray, hands_solution) -> tuple:
+# ----------------- Frame Processing Routine -----------------
+def process_single_frame(frame_bgr: np.ndarray, hands_solution, is_snapshot=False) -> tuple:
     """
-    Process raw frame with MediaPipe, normalize keypoints, run neural network inference,
-    and draw stylish HUD bounding box and labels.
+    Processes video frame in real time:
+      - MediaPipe Hand landmark mesh
+      - Normalized 63 keypoints
+      - Gesture classification
+      - HUD overlay (landmarks, bounding box, labels, top & bottom bars)
     """
     if mirror_feed:
         frame_bgr = cv2.flip(frame_bgr, 1)
@@ -531,41 +528,44 @@ def process_video_frame(frame_bgr: np.ndarray, hands_solution) -> tuple:
         # Extract normalized 63 keypoints
         keypoints = extract_normalized_keypoints(results)
 
-        # Infer gesture
+        # Predict gesture
         probs = model.predict(np.expand_dims(keypoints, axis=0), verbose=0)[0]
         pred_idx = int(np.argmax(probs))
         conf = float(probs[pred_idx])
         pred_action = actions[pred_idx]
 
-        tracker.recent.append(pred_action)
-
-        # Temporal stability smoothing
-        if len(tracker.recent) >= min_stability_frames:
-            counts = {a: tracker.recent.count(a) for a in set(tracker.recent)}
-            most_common, freq = max(counts.items(), key=lambda it: it[1])
-            if freq >= min_stability_frames and conf >= threshold:
+        if is_snapshot:
+            # Immediate inference on snapshot
+            if conf >= threshold:
                 is_stable = True
-                pred_action = most_common
+        else:
+            # Smoothing filter handled by caller
+            if conf >= threshold:
+                is_stable = True
 
-                # Overlay tag above bbox
-                if bbox:
-                    tag = f"{pred_action.upper()} ({conf * 100:.1f}%)"
-                    cv2.putText(
-                        frame_bgr, tag, (bx1, max(30, by1 - 10)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 163), 2, cv2.LINE_AA
-                    )
+        # Draw label on bounding box
+        if bbox and is_stable:
+            bx1, by1, _, _ = bbox
+            tag = f"{pred_action.upper()} ({conf * 100:.1f}%)"
+            cv2.putText(
+                frame_bgr, tag, (bx1, max(30, by1 - 10)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 163), 2, cv2.LINE_AA
+            )
 
-    # Top banner overlay inside video frame
+    # Top banner overlay
     overlay = frame_bgr.copy()
     cv2.rectangle(overlay, (0, 0), (w, 50), (15, 23, 42), -1)
     cv2.addWeighted(overlay, 0.75, frame_bgr, 0.25, 0, frame_bgr)
 
-    status_text = f"GESTURE: {pred_action.upper()} [{conf*100:.1f}%]" if is_stable else "Hold hand steady in camera view"
+    status_text = f"GESTURE: {pred_action.upper()} [{conf*100:.1f}%]" if is_stable else ("Hold hand steady in camera view" if results.multi_hand_landmarks else "Show hand to camera")
     text_color = (0, 255, 163) if is_stable else (180, 180, 180)
     cv2.putText(frame_bgr, status_text, (15, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_color, 2, cv2.LINE_AA)
 
     return frame_bgr, pred_action, conf, is_stable
 
+
+# ----------------- Main Interface Workspace -----------------
+col_cam, col_data = st.columns([5, 4])
 
 # ----------------- Left Column: Camera Viewport -----------------
 with col_cam:
@@ -573,10 +573,12 @@ with col_cam:
 
     if not st.session_state.camera_enabled:
         st.info("📷 **Camera is Paused.** Toggle **'Camera Feed Active'** in the sidebar to resume live detection.")
-    else:
-        # Preferred WebRTC streaming if available
+
+    elif st.session_state.camera_mode == "Live WebRTC Video Stream (Real-Time)":
         if HAS_WEBRTC:
-            class ISLVideoProcessor(VideoProcessorBase):
+            st.caption("🟢 **Real-Time Stream Active**: Click **START** below to stream continuously at 30 FPS.")
+
+            class RealTimeISLProcessor(VideoProcessorBase):
                 def __init__(self):
                     self.hands = mp_hands.Hands(
                         model_complexity=0,
@@ -584,48 +586,151 @@ with col_cam:
                         min_detection_confidence=0.5,
                         min_tracking_confidence=0.5
                     )
+                    self.recent = deque(maxlen=6)
+                    self.sentence = []
+                    self.last_spoken = ""
+                    self.last_spoken_time = 0.0
+                    self.prev_time = time.time()
+                    self.fps = 0.0
 
                 def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
                     img = frame.to_ndarray(format="bgr24")
-                    processed_img, action, conf, stable = process_video_frame(img, self.hands)
-                    return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
+                    h, w = img.shape[:2]
 
-            webrtc_ctx = webrtc_streamer(
-                key="isl-live-stream",
+                    # FPS calculation
+                    now = time.time()
+                    self.fps = 0.9 * self.fps + 0.1 * (1.0 / max(now - self.prev_time, 1e-5))
+                    self.prev_time = now
+
+                    processed, action, conf, is_valid = process_single_frame(img, self.hands, is_snapshot=False)
+
+                    if action:
+                        self.recent.append(action)
+                        if len(self.recent) >= min_stability_frames:
+                            counts = {a: self.recent.count(a) for a in set(self.recent)}
+                            most_common, freq = max(counts.items(), key=lambda it: it[1])
+                            if freq >= min_stability_frames and conf >= threshold:
+                                # Voice output cooldown
+                                if not st.session_state.get("sound_muted", False):
+                                    if (most_common != self.last_spoken) or (now - self.last_spoken_time > 2.2):
+                                        self.last_spoken = most_common
+                                        self.last_spoken_time = now
+                                        if HAS_LOCAL_SOUND:
+                                            try:
+                                                sound_player.speak_gesture(most_common, confidence=conf)
+                                            except Exception:
+                                                pass
+
+                                if not self.sentence or self.sentence[-1] != most_common:
+                                    self.sentence.append(most_common)
+                                    if len(self.sentence) > 8:
+                                        self.sentence = self.sentence[-8:]
+
+                    # Render live FPS counter
+                    cv2.putText(processed, f"{int(self.fps)} FPS", (w - 95, 34),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 1, cv2.LINE_AA)
+
+                    # Bottom HUD Sentence Bar
+                    overlay_b = processed.copy()
+                    cv2.rectangle(overlay_b, (0, h - 45), (w, h), (15, 23, 42), -1)
+                    cv2.addWeighted(overlay_b, 0.75, processed, 0.25, 0, processed)
+                    sentence_display = " ".join(self.sentence) if self.sentence else "(none)"
+                    cv2.putText(processed, f"Sentence: {sentence_display}", (15, h - 16),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
+
+                    return av.VideoFrame.from_ndarray(processed, format="bgr24")
+
+            webrtc_streamer(
+                key="realtime-isl-stream",
                 mode=WebRtcMode.SENDRECV,
-                rtc_configuration=RTCConfiguration(
-                    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-                ),
-                video_processor_factory=ISLVideoProcessor,
-                media_stream_constraints={"video": True, "audio": False},
+                rtc_configuration=RTCConfiguration({
+                    "iceServers": [
+                        {"urls": ["stun:stun.l.google.com:19302"]},
+                        {"urls": ["stun:stun1.l.google.com:19302"]},
+                        {"urls": ["stun:stun2.l.google.com:19302"]},
+                    ]
+                }),
+                video_processor_factory=RealTimeISLProcessor,
+                media_stream_constraints={"video": {"width": {"ideal": 640}, "height": {"ideal": 480}}, "audio": False},
                 async_processing=True,
             )
         else:
-            # Fallback High-Quality Snapshot / Live Upload mode if WebRTC is not installed
-            st.info("💡 Real-Time WebRTC engine loading. You can also use direct frame capture below:")
-            cam_image = st.camera_input("Capture ISL Gesture Frame")
-            if cam_image is not None:
-                bytes_data = cam_image.getvalue()
-                cv_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+            st.warning("WebRTC is initializing. Please select **Direct Hardware Webcam** or **Instant Snapshot Mode**.")
 
-                with mp_hands.Hands(model_complexity=0, max_num_hands=1) as hands_engine:
-                    processed_img, action, conf, stable = process_video_frame(cv_img, hands_engine)
-                    st.image(cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB), use_container_width=True)
+    elif st.session_state.camera_mode == "Direct Hardware Webcam (OpenCV)":
+        st.caption("⚡ **Local Direct Webcam**: Streams directly from your hardware camera via OpenCV at 30+ FPS.")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            start_cam = st.button("▶️ Start Direct Stream", use_container_width=True)
+        with col_btn2:
+            stop_cam = st.button("⏹️ Stop Stream", use_container_width=True)
 
-                    if stable and action:
-                        st.session_state.current_gesture = action
-                        st.session_state.current_confidence = conf
+        if start_cam:
+            st.session_state.direct_cam_running = True
+        if stop_cam:
+            st.session_state.direct_cam_running = False
 
-                        # Update sentence history
-                        if not st.session_state.sentence or st.session_state.sentence[-1] != action:
-                            st.session_state.sentence.append(action)
-                            st.session_state.history_log.insert(0, {
-                                "time": time.strftime("%H:%M:%S"),
-                                "gesture": action,
-                                "confidence": f"{conf*100:.1f}%"
-                            })
-                            st.session_state.pending_speech = action
-                            st.rerun()
+        if st.session_state.direct_cam_running:
+            video_placeholder = st.empty()
+            cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                st.error("Could not open hardware webcam. Please check camera permissions.")
+            else:
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                recent_direct = deque(maxlen=5)
+
+                with mp_hands.Hands(model_complexity=0, max_num_hands=1) as direct_hands:
+                    while st.session_state.direct_cam_running:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+
+                        processed_frame, action, conf, valid = process_single_frame(frame, direct_hands)
+
+                        if action:
+                            recent_direct.append(action)
+                            if len(recent_direct) >= min_stability_frames:
+                                counts = {a: recent_direct.count(a) for a in set(recent_direct)}
+                                most_common, freq = max(counts.items(), key=lambda it: it[1])
+                                if freq >= min_stability_frames and conf >= threshold:
+                                    st.session_state.current_gesture = most_common
+                                    st.session_state.current_confidence = conf
+
+                                    if not st.session_state.sentence or st.session_state.sentence[-1] != most_common:
+                                        st.session_state.sentence.append(most_common)
+                                        if HAS_LOCAL_SOUND and not st.session_state.sound_muted:
+                                            sound_player.speak_gesture(most_common, confidence=conf)
+
+                        video_placeholder.image(cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+                        time.sleep(0.01)
+
+                cap.release()
+
+    elif st.session_state.camera_mode == "Instant Snapshot Mode":
+        st.caption("📸 **Instant Snapshot**: Captures a single frame and classifies the gesture immediately.")
+        cam_image = st.camera_input("Capture ISL Gesture Frame")
+        if cam_image is not None:
+            bytes_data = cam_image.getvalue()
+            cv_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+
+            with mp_hands.Hands(model_complexity=0, max_num_hands=1) as snap_hands:
+                processed_img, action, conf, valid = process_single_frame(cv_img, snap_hands, is_snapshot=True)
+                st.image(cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+                if valid and action:
+                    st.session_state.current_gesture = action
+                    st.session_state.current_confidence = conf
+
+                    if not st.session_state.sentence or st.session_state.sentence[-1] != action:
+                        st.session_state.sentence.append(action)
+                        st.session_state.history_log.insert(0, {
+                            "time": time.strftime("%H:%M:%S"),
+                            "gesture": action,
+                            "confidence": f"{conf*100:.1f}%"
+                        })
+                        st.session_state.pending_speech = action
+                        st.rerun()
 
 
 # ----------------- Right Column: Live Transcription & Stats -----------------
@@ -700,4 +805,4 @@ with col_data:
             hide_index=True
         )
     else:
-        st.caption("No gestures detected yet in this session.")
+        st.caption("No gestures recorded yet.")
